@@ -1,11 +1,11 @@
-using System;
+
 using System.Collections.Generic;
 using UnityEngine;
 
 public class PlacementManager : MonoBehaviour
 {
     public GameObject MouseIndicator;
-    public GameObject GridIndicator;
+
     public Grid grid;
     public BuildingSystemInputManager inputManager;
 
@@ -16,17 +16,18 @@ public class PlacementManager : MonoBehaviour
     private GridData floorTileData = new GridData(); // this is only for learning the video
     private GridData BuildingTileData = new GridData();
     private List<GameObject> deployedBuildings = new List<GameObject>();
-    private Renderer gridIndicatorRender;
+
+
+    public PreviewManager previewManager;
+
+    public Vector3Int lastMouseGridPos = Vector3Int.zero;
 
     Vector3 mousePos;
     Vector3Int cellPos;
     Vector3 cellPosWorld;
-    public float centerOffset = 0.5f;
 
-    private void Awake()
-    {
-        gridIndicatorRender = GridIndicator.GetComponentInChildren<Renderer>();
-    }
+
+
 
     private void Update()
     {
@@ -37,40 +38,41 @@ public class PlacementManager : MonoBehaviour
         }
         mousePos = BuildingSystemInputManager.GetPlaceByMouse();
         cellPos = grid.WorldToCell(mousePos);
-
-        gridIndicatorRender.material.color = CheckGridDeployable(cellPos, selectedBuildingIndex) ? Color.white : Color.red;
-
-        MouseIndicator.transform.position = mousePos;
-        cellPosWorld = grid.CellToWorld(cellPos);
-        GridIndicator.transform.position = new Vector3(cellPosWorld.x + centerOffset, cellPosWorld.y, cellPosWorld.z + centerOffset);
+        if (lastMouseGridPos != cellPos) // prevent from calculating too much, only calculate when mouse moving
+        {
+            MouseIndicator.transform.position = mousePos;
+            cellPosWorld = grid.CellToWorld(cellPos);
+            previewManager.UpdatePreview(cellPosWorld, CheckGridDeployable(cellPos, selectedBuildingIndex));
+            lastMouseGridPos = cellPos; // set 2 values same, so if it won't run this part again if mouse doesn't move
+        }
     }
 
     public void StartConstruction(int id)
     {
-        //EndConstruction();
+        EndConstruction();
         selectedBuildingIndex = biSo.buildingItems.FindIndex(b => b.ID == id);
         GridVisual.gameObject.SetActive(true);
-        GridIndicator.gameObject.SetActive(true);
+        previewManager.ShowPreviewBuildings(biSo.buildingItems[selectedBuildingIndex].prefab, biSo.buildingItems[selectedBuildingIndex].Size);
         inputManager.OnClick += DeployBuilding;
         inputManager.OnExit += EndConstruction;
     }
 
     private void EndConstruction()
     {
+
         selectedBuildingIndex = -1;
         GridVisual.gameObject.SetActive(false);
-        GridIndicator.gameObject.SetActive(false);
+        previewManager.HidePreviewBuildings();
         inputManager.OnClick -= DeployBuilding;
         inputManager.OnExit -= EndConstruction;
+        lastMouseGridPos = Vector3Int.zero;
     }
 
     private void DeployBuilding()
     {
-
+        Debug.Log("DeployBuilding called");
         if (inputManager.CheckClickOnUI())
-        {
             return;
-        }
         if (!CheckGridDeployable(cellPos, selectedBuildingIndex))
             return;
 
@@ -78,10 +80,9 @@ public class PlacementManager : MonoBehaviour
         targetBuilding.transform.position = cellPosWorld;
         deployedBuildings.Add(targetBuilding);
         GridData data = biSo.buildingItems[selectedBuildingIndex].ID == 6 ? floorTileData : BuildingTileData;
-
         data.AddGridsEntry(cellPos, biSo.buildingItems[selectedBuildingIndex].Size, biSo.buildingItems[selectedBuildingIndex].ID,
             data.OccupiedGrids.Count - 1);
-        // print(data.OccupiedGrids[cellPos].ID); check it out if the first ID is -1 ,and it is
+
         EndConstruction();
     }
 
