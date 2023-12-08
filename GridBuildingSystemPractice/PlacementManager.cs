@@ -1,94 +1,100 @@
-
-using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// overall organizer, it conveys data and orders
+/// </summary>
 public class PlacementManager : MonoBehaviour
 {
-    public GameObject MouseIndicator;
+    public BuildingSystemInputManager inputManager; // used to get position and implement click event
+    public Grid grid; // used to call its public methods to convert world vector to grid vector
+    public GameObject GridVisual; // used to show grids on the map
 
-    public Grid grid;
-    public BuildingSystemInputManager inputManager;
+    public BuildingItemsSO biSo; // building database
 
-    public GameObject GridVisual;
-    private int selectedBuildingIndex = -1;
-    public BuildingItemsSO biSo;
+    private GridData floorTileData = new GridData(); // this is only for learning the video, save floor type buildings
+    private GridData buildingTileData = new GridData(); //  save normal type buildings
 
-    private GridData floorTileData = new GridData(); // this is only for learning the video
-    private GridData BuildingTileData = new GridData();
-    private List<GameObject> deployedBuildings = new List<GameObject>();
+    public PreviewManager previewManager;   // used to execute displaying buildingpreview, grid indicators
+    public BuildingConstructor buildingConstructor;  // used to implement deploy or remove buildings in the scene
 
+    private IBuildingState buildingState; // used to implement deploying/demolishing behavior
 
-    public PreviewManager previewManager;
+    private Vector3Int lastMouseGridPos = Vector3Int.zero; // mark last grid where the mouse hung over, used to prevent Update Computing cost
 
-    public Vector3Int lastMouseGridPos = Vector3Int.zero;
-
-    Vector3 mousePos;
-    Vector3Int cellPos;
-    Vector3 cellPosWorld;
+    Vector3 mousePos; // save mousePosition from InputManager
+    Vector3Int cellPos; // save grid position which the Mouse is hanging over
 
 
 
 
     private void Update()
     {
-        // Vector3 mousePos = inputManager.GetPlaceByMouse();
-        if (selectedBuildingIndex < 0)
-        {
+
+        if (buildingState == null) // if no any state active then stop updating
             return;
-        }
-        mousePos = BuildingSystemInputManager.GetPlaceByMouse();
-        cellPos = grid.WorldToCell(mousePos);
+        mousePos = BuildingSystemInputManager.GetPlaceByMouse(); // get mouse position
+        cellPos = grid.WorldToCell(mousePos); // convert mouse position vector3 to grid position Vector3Int
         if (lastMouseGridPos != cellPos) // prevent from calculating too much, only calculate when mouse moving
         {
-            MouseIndicator.transform.position = mousePos;
-            cellPosWorld = grid.CellToWorld(cellPos);
-            previewManager.UpdatePreview(cellPosWorld, CheckGridDeployable(cellPos, selectedBuildingIndex));
+            buildingState.UpdateState(cellPos); // update behavior based on a specific state
             lastMouseGridPos = cellPos; // set 2 values same, so if it won't run this part again if mouse doesn't move
         }
     }
 
+    /// <summary>
+    /// activate Deploy state
+    /// </summary>
+    /// <param name="id"> building ID</param>
     public void StartConstruction(int id)
     {
         EndConstruction();
-        selectedBuildingIndex = biSo.buildingItems.FindIndex(b => b.ID == id);
         GridVisual.gameObject.SetActive(true);
-        previewManager.ShowPreviewBuildings(biSo.buildingItems[selectedBuildingIndex].prefab, biSo.buildingItems[selectedBuildingIndex].Size);
-        inputManager.OnClick += DeployBuilding;
-        inputManager.OnExit += EndConstruction;
+
+        // initialize Deploy state
+        buildingState = new DeployState(id, previewManager, biSo, grid, buildingConstructor, floorTileData, buildingTileData);
+
+        inputManager.OnClick += DeployBuilding;  // register construction behavior
+        inputManager.OnExit += EndConstruction;  // register End-construction behavior
+    }
+
+    /// <summary>
+    /// activate Demolish state
+    /// </summary>
+    public void StartDemolish()
+    {
+        EndConstruction();
+        GridVisual.gameObject.SetActive(true);
+
+        // initialize Demolish state
+        buildingState = new DemolishState(previewManager, /*grid,*/ buildingConstructor, floorTileData, buildingTileData);
+
+        inputManager.OnClick += DeployBuilding;  // register construction behavior
+        inputManager.OnExit += EndConstruction; // register End-construction behavior
     }
 
     private void EndConstruction()
     {
-
-        selectedBuildingIndex = -1;
-        GridVisual.gameObject.SetActive(false);
-        previewManager.HidePreviewBuildings();
-        inputManager.OnClick -= DeployBuilding;
-        inputManager.OnExit -= EndConstruction;
-        lastMouseGridPos = Vector3Int.zero;
-    }
-
-    private void DeployBuilding()
-    {
-        Debug.Log("DeployBuilding called");
-        if (inputManager.CheckClickOnUI())
+        if (buildingState == null)  // if there is no any state is active then no needs to keep working
             return;
-        if (!CheckGridDeployable(cellPos, selectedBuildingIndex))
+        GridVisual.gameObject.SetActive(false);  // turn off grid visualization
+
+        buildingState.EndState(); // call state's endstate method
+
+        inputManager.OnClick -= DeployBuilding;     // deregister construction behavior
+        inputManager.OnExit -= EndConstruction;     // deregister End-construction behavior
+        lastMouseGridPos = Vector3Int.zero;  // set up last grid position as default
+         
+        buildingState = null;  // clear state reference
+    }
+
+    private void DeployBuilding()  // Construction behavior, actually the name of the method is not appropriate after refatoring
+    {
+        if (inputManager.CheckClickOnUI())  // if clicked on UI then do nothing
             return;
 
-        GameObject targetBuilding = Instantiate(biSo.buildingItems[selectedBuildingIndex].prefab);
-        targetBuilding.transform.position = cellPosWorld;
-        deployedBuildings.Add(targetBuilding);
-        GridData data = biSo.buildingItems[selectedBuildingIndex].ID == 6 ? floorTileData : BuildingTileData;
-        data.AddGridsEntry(cellPos, biSo.buildingItems[selectedBuildingIndex].Size, biSo.buildingItems[selectedBuildingIndex].ID,
-            data.OccupiedGrids.Count - 1);
+        buildingState.OnAction(cellPos); // act based on a spcific state
 
-        EndConstruction();
+        EndConstruction(); 
     }
 
-    private bool CheckGridDeployable(Vector3Int cellPos, int selectedBuildingIndex)
-    {
-        GridData data = biSo.buildingItems[selectedBuildingIndex].ID == 6 ? floorTileData : BuildingTileData;
-        return data.CheckGridAvailable(cellPos, biSo.buildingItems[selectedBuildingIndex].Size);
-    }
 }
